@@ -4,7 +4,18 @@ from collections import Counter
 import torch
 from torch.nn.utils.rnn import pad_sequence
 import torch.nn as nn
+from torch.utils.data import DataLoader, Dataset
 from transformer import TransformerLM
+
+class TokenizedDataset(Dataset):
+    def __init__(self, data):
+        self.data = data
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
 
 def build_vocab(sentences, min_freq=3):
     '''
@@ -87,6 +98,12 @@ def main(output_file):
     padded_val = pad_sequences(tokenized_val, pad_value=vocab['<pad>'])
     padded_test = pad_sequences(tokenized_test, pad_value=vocab['<pad>'])
 
+    # Wrap datasets in DataLoader for batching
+    batch_size = 32  # Define batch size
+    train_loader = DataLoader(TokenizedDataset(padded_train), batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(TokenizedDataset(padded_val), batch_size=batch_size)
+    test_loader = DataLoader(TokenizedDataset(padded_test), batch_size=batch_size)
+
     # Define model parameters
     d_model = 128  # Embedding size
     n_head = 8  # Number of attention heads
@@ -96,9 +113,31 @@ def main(output_file):
     # Initialize model
     model = TransformerLM(vocab_size=len(vocab), d_model=d_model, n_head=n_head, n_layer=n_layer, max_seq_len=max_seq_len)
 
-    # Pass padded sequences through the model
-    logits = model(padded_train)  # Logits: (batch_size, seq_len, vocab_size)
-    print(f"Logits shape: {logits.shape}")  # Debugging output
+    # Define loss and optimizer
+    criterion = nn.CrossEntropyLoss(ignore_index=vocab['<pad>'])
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+
+    # Training loop
+    num_epochs = 10
+    for epoch in range(num_epochs):
+        model.train()
+        for batch in train_loader:
+            # Forward pass
+            logits = model(batch)  # (batch_size, seq_len, vocab_size)
+
+            # Prepare targets (shifted by 1 token for language modeling)
+            targets = batch[:, 1:].contiguous().view(-1)  # Shifted and flattened
+            logits = logits[:, :-1, :].contiguous().view(-1, logits.size(-1))  # Flatten logits
+
+            # Compute loss
+            loss = criterion(logits, targets)
+
+            # Backpropagation
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            
+        print(f"Epoch {epoch + 1}, Loss: {loss.item()}")
 
 
 if __name__ == "__main__":
