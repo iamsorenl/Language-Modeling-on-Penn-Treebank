@@ -1,3 +1,6 @@
+import os
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+
 import argparse
 from datasets import load_dataset
 from collections import Counter
@@ -151,8 +154,13 @@ def main(output_file):
     n_layer = 4  # Number of Transformer layers
     max_seq_len = max(len(seq.split()) for seq in train_sentences) + 2  # Add 2 for <s> and </s>
 
-    # Select device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Device selection: prioritize CUDA, then MPS, then CPU
+    if torch.cuda.is_available():
+        device = torch.device("cuda")  # Use CUDA if available
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")  # Use MPS if available (macOS with Apple Silicon)
+    else:
+        device = torch.device("cpu")  # Fallback to CPU
     print(f"Using device: {device}")
 
     # Initialize model
@@ -191,11 +199,11 @@ def main(output_file):
     test_loss, test_perplexity = evaluate(model, test_loader, criterion, device)
     print(f"Test Loss: {test_loss}, Test Perplexity: {test_perplexity}")
 
-    # Save model
-    torch.save(model.state_dict(), output_file)
+    # Not Implemented: use output file
+    print(f"(not implemented) Saving model to {output_file}...")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the language modeling script.")
-    parser.add_argument('output_file', type=str, nargs='?', default='transformer_lm.pt', help='The output file to save the model.')
+    parser.add_argument('output_file', type=str, nargs='?', default='submission.csv', help='The output file to save the model.')
     args = parser.parse_args()
     main(args.output_file)
