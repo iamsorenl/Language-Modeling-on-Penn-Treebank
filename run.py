@@ -4,6 +4,7 @@ from collections import Counter
 import torch
 from torch.nn.utils.rnn import pad_sequence
 import torch.nn as nn
+from encoding import LearnedPositionalEncoding
 
 def build_vocab(sentences, min_freq=3):
     '''
@@ -87,12 +88,24 @@ def main(output_file):
     padded_test = pad_sequences(tokenized_test, pad_value=vocab['<pad>'])
 
     # Define the embedding layer
-    embedding_dim = 256
+    embedding_dim = 256  # Set embedding dimension
+    max_seq_len = padded_train.size(1)  # Get maximum sequence length
     embedding = nn.Embedding(
         num_embeddings=len(vocab),  # Vocabulary size
-        embedding_dim=embedding_dim,  # Embedding dimension
+        embedding_dim=embedding_dim,  # Embedding dimension (can be tuned)
         padding_idx=vocab['<pad>']  # Padding token index
     )
+
+    positional_encoding = LearnedPositionalEncoding(d_model=embedding_dim, max_len=max_seq_len)
+
+    # Apply embedding and positional encoding
+    embedded_train = embedding(padded_train)  # Word embeddings
+    encoded_train = positional_encoding(embedded_train)  # Add positional encoding
+
+    print(f"Shape of embedded train sequences: {embedded_train.shape}")
+    print(f"Shape of positional-encoded train sequences: {encoded_train.shape}")
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the language modeling script.")
