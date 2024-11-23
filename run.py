@@ -6,8 +6,75 @@ from torch.nn.utils.rnn import pad_sequence
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from transformer import TransformerLM
+import time  # For timing
+
+def format_time(seconds):
+    """
+    Convert seconds to a formatted string of minutes and seconds.
+    """
+    mins, secs = divmod(seconds, 60)
+    return f"{int(mins)}m {secs:.2f}s"
+
+def evaluate(model, data_loader, criterion, device):
+    """
+    Evaluate the model on the validation/test dataset.
+    """
+    model.eval()
+    total_loss = 0
+    start_time = time.time()  # Start timing evaluation
+    with torch.no_grad():
+        for input_seqs, target_seqs, pad_masks in data_loader:
+            # Move data to the selected device
+            input_seqs, target_seqs, pad_masks = input_seqs.to(device), target_seqs.to(device), pad_masks.to(device)
+            
+            logits = model(input_seqs, pad_masks)
+            logits = logits[:, :-1, :].contiguous().view(-1, logits.size(-1))
+            targets = target_seqs[:, 1:].contiguous().view(-1)
+
+            loss = criterion(logits, targets)
+            total_loss += loss.item()
+
+    avg_loss = total_loss / len(data_loader)
+    perplexity = torch.exp(torch.tensor(avg_loss))
+    eval_time = time.time() - start_time  # End timing
+    print(f"Evaluation completed in {format_time(eval_time)}")
+    return avg_loss, perplexity
+
+def collate_fn(batch, vocab):
+    """
+    Custom collate function to prepare input, target sequences, and masks for DataLoader.
+    """
+    pad_idx = vocab['<pad>']
+    s_idx = vocab['<s>']
+    end_idx = vocab['</s>']
+
+    input_seqs = []
+    target_seqs = []
+    pad_masks = []
+
+    for sentence in batch:
+        # Tokenize the sentence
+        tokenized = [s_idx] + [vocab.get(word, vocab['<unk>']) for word in sentence.split()] + [end_idx]
+
+        # Create input and target sequences
+        input_seq = tokenized[:-1]  # Input stops before </s>
+        target_seq = tokenized[1:]  # Target starts after <s>
+
+        input_seqs.append(torch.tensor(input_seq))
+        target_seqs.append(torch.tensor(target_seq))
+        pad_masks.append(torch.ones(len(input_seq), dtype=torch.long))
+
+    # Pad sequences to max length in batch
+    input_seqs = pad_sequence(input_seqs, batch_first=True, padding_value=pad_idx)
+    target_seqs = pad_sequence(target_seqs, batch_first=True, padding_value=pad_idx)
+    pad_masks = pad_sequence(pad_masks, batch_first=True, padding_value=0)
+
+    return input_seqs, target_seqs, pad_masks
 
 class TokenizedDataset(Dataset):
+    """
+    Dataset class for tokenized sentences.
+    """
     def __init__(self, data):
         self.data = data
 
@@ -18,11 +85,9 @@ class TokenizedDataset(Dataset):
         return self.data[idx]
 
 def build_vocab(sentences, min_freq=3):
-    '''
-    Build a vocabulary from the given sentences.
-    Words appearing less than `min_freq` times are excluded.
-    Special tokens are added explicitly.
-    '''
+    """
+    Build a vocabulary from training sentences.
+    """
     counter = Counter()
     for sentence in sentences:
         tokens = sentence.split()
@@ -42,37 +107,10 @@ def build_vocab(sentences, min_freq=3):
 
     return vocab
 
-
-def tokenize_with_start_and_stop(sentence, vocab):
-    '''
-    Tokenize a sentence and map it to vocabulary IDs.
-    Adds <s> at the start and </s> at the end of the sentence.
-    Unknown words are mapped to <unk>.
-    '''
-    # Add <s> and </s> tokens
-    sentence_with_tokens = "<s> " + sentence + " </s>"
-    token_ids = []
-    
-    for word in sentence_with_tokens.split():
-        if word in vocab:
-            token_ids.append(vocab[word])
-        else:
-            token_ids.append(vocab['<unk>'])  # Map unknown tokens explicitly to <unk>
-    
-    return token_ids
-
-def pad_sequences(tokenized_sentences, pad_value=0):
-    '''
-    Pads a list of tokenized sentences to the same length.
-    Returns a tensor with shape (batch_size, max_length).
-    '''
-    # Convert tokenized sentences to tensors
-    tensor_sentences = [torch.tensor(sentence) for sentence in tokenized_sentences]
-    # Pad the sequences
-    padded_sequences = pad_sequence(tensor_sentences, batch_first=True, padding_value=pad_value)
-    return padded_sequences
-
 def main(output_file):
+    """
+    Main function to train the model.
+    """
     # Load the Penn Treebank dataset
     ptb = load_dataset('ptb-text-only/ptb_text_only', trust_remote_code=True)
     train_data = ptb['train']
@@ -87,31 +125,38 @@ def main(output_file):
     # Build vocabulary from training data
     vocab = build_vocab(train_sentences, min_freq=3)
     print(f"Vocabulary size: {len(vocab)}")
-    
-    # Tokenize the sentences
-    tokenized_train = [tokenize_with_start_and_stop(sentence, vocab) for sentence in train_sentences]
-    tokenized_val = [tokenize_with_start_and_stop(sentence, vocab) for sentence in val_sentences]
-    tokenized_test = [tokenize_with_start_and_stop(sentence, vocab) for sentence in test_sentences]
-
-    # Pad the tokenized sequences
-    padded_train = pad_sequences(tokenized_train, pad_value=vocab['<pad>'])
-    padded_val = pad_sequences(tokenized_val, pad_value=vocab['<pad>'])
-    padded_test = pad_sequences(tokenized_test, pad_value=vocab['<pad>'])
 
     # Wrap datasets in DataLoader for batching
     batch_size = 32  # Define batch size
-    train_loader = DataLoader(TokenizedDataset(padded_train), batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(TokenizedDataset(padded_val), batch_size=batch_size)
-    test_loader = DataLoader(TokenizedDataset(padded_test), batch_size=batch_size)
+    train_loader = DataLoader(
+        TokenizedDataset(train_sentences), 
+        batch_size=batch_size, 
+        shuffle=True, 
+        collate_fn=lambda batch: collate_fn(batch, vocab)
+    )
+    val_loader = DataLoader(
+        TokenizedDataset(val_sentences), 
+        batch_size=batch_size, 
+        collate_fn=lambda batch: collate_fn(batch, vocab)
+    )
+    test_loader = DataLoader(
+        TokenizedDataset(test_sentences), 
+        batch_size=batch_size, 
+        collate_fn=lambda batch: collate_fn(batch, vocab)
+    )
 
     # Define model parameters
     d_model = 128  # Embedding size
     n_head = 8  # Number of attention heads
     n_layer = 4  # Number of Transformer layers
-    max_seq_len = padded_train.size(1)  # Maximum sequence length
+    max_seq_len = max(len(seq.split()) for seq in train_sentences) + 2  # Add 2 for <s> and </s>
+
+    # Select device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
     # Initialize model
-    model = TransformerLM(vocab_size=len(vocab), d_model=d_model, n_head=n_head, n_layer=n_layer, max_seq_len=max_seq_len)
+    model = TransformerLM(vocab_size=len(vocab), d_model=d_model, n_head=n_head, n_layer=n_layer, max_seq_len=max_seq_len).to(device)
 
     # Define loss and optimizer
     criterion = nn.CrossEntropyLoss(ignore_index=vocab['<pad>'])
@@ -119,29 +164,38 @@ def main(output_file):
 
     # Training loop
     num_epochs = 10
+    train_start_time = time.time()  # Start timing training
     for epoch in range(num_epochs):
         model.train()
-        for batch in train_loader:
-            # Forward pass
-            logits = model(batch)  # (batch_size, seq_len, vocab_size)
+        epoch_start_time = time.time()  # Time each epoch
+        for input_seqs, target_seqs, pad_masks in train_loader:
+            input_seqs, target_seqs, pad_masks = input_seqs.to(device), target_seqs.to(device), pad_masks.to(device)
 
-            # Prepare targets (shifted by 1 token for language modeling)
-            targets = batch[:, 1:].contiguous().view(-1)  # Shifted and flattened
-            logits = logits[:, :-1, :].contiguous().view(-1, logits.size(-1))  # Flatten logits
+            logits = model(input_seqs, pad_masks)
+            logits = logits[:, :-1, :].contiguous().view(-1, logits.size(-1))
+            targets = target_seqs[:, 1:].contiguous().view(-1)
 
-            # Compute loss
             loss = criterion(logits, targets)
-
-            # Backpropagation
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            
-        print(f"Epoch {epoch + 1}, Loss: {loss.item()}")
 
+        epoch_time = time.time() - epoch_start_time
+        val_loss, val_perplexity = evaluate(model, val_loader, criterion, device)
+        print(f"Epoch {epoch + 1}, Train Loss: {loss.item()}, Val Loss: {val_loss}, Perplexity: {val_perplexity}, Epoch Time: {format_time(epoch_time)}")
+    
+    total_train_time = time.time() - train_start_time
+    print(f"Training completed in {format_time(total_train_time)}")
+
+    # Evaluate on the test set
+    test_loss, test_perplexity = evaluate(model, test_loader, criterion, device)
+    print(f"Test Loss: {test_loss}, Test Perplexity: {test_perplexity}")
+
+    # Save model
+    torch.save(model.state_dict(), output_file)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the language modeling script.")
-    parser.add_argument('output_file', type=str, nargs='?', default='submission.csv', help='The output file to write results to.')
+    parser.add_argument('output_file', type=str, nargs='?', default='transformer_lm.pt', help='The output file to save the model.')
     args = parser.parse_args()
     main(args.output_file)

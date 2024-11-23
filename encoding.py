@@ -20,6 +20,6 @@ class LearnedPositionalEncoding(nn.Module):
         Returns:
             x + positional embeddings.
         '''
-        pos = torch.arange(x.size(1)).view(1, x.size(1))  # (1, seq_len)
+        pos = torch.arange(x.size(1), device=x.device).view(1, x.size(1))  # Ensure pos is on the same device as x
         embedding = self.pos_embedding(pos)  # (1, seq_len, d_model)
         return x + embedding
