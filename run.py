@@ -3,6 +3,7 @@ from datasets import load_dataset
 from collections import Counter
 import torch
 from torch.nn.utils.rnn import pad_sequence
+import torch.nn as nn
 
 def build_vocab(sentences, min_freq=3):
     '''
@@ -21,11 +22,14 @@ def build_vocab(sentences, min_freq=3):
 
     # Add words meeting the frequency threshold to the vocabulary
     for word, freq in counter.items():
+        if word in vocab:  # Skip tokens that are already in the vocabulary
+            continue
         if freq >= min_freq:
             vocab[word] = idx
             idx += 1
 
     return vocab
+
 
 def tokenize_with_start_and_stop(sentence, vocab):
     '''
@@ -35,8 +39,15 @@ def tokenize_with_start_and_stop(sentence, vocab):
     '''
     # Add <s> and </s> tokens
     sentence_with_tokens = "<s> " + sentence + " </s>"
-    # Tokenize and map to vocabulary IDs
-    return [vocab.get(word, vocab['<unk>']) for word in sentence_with_tokens.split()]
+    token_ids = []
+    
+    for word in sentence_with_tokens.split():
+        if word in vocab:
+            token_ids.append(vocab[word])
+        else:
+            token_ids.append(vocab['<unk>'])  # Map unknown tokens explicitly to <unk>
+    
+    return token_ids
 
 def pad_sequences(tokenized_sentences, pad_value=0):
     '''
@@ -75,9 +86,13 @@ def main(output_file):
     padded_val = pad_sequences(tokenized_val, pad_value=vocab['<pad>'])
     padded_test = pad_sequences(tokenized_test, pad_value=vocab['<pad>'])
 
-    print(f"First padded train sequence:\n{padded_train[0]}")
-    print(f"First padded val sequence:\n{padded_val[0]}")
-    print(f"First padded test sequence:\n{padded_test[0]}")
+    # Define the embedding layer
+    embedding_dim = 256
+    embedding = nn.Embedding(
+        num_embeddings=len(vocab),  # Vocabulary size
+        embedding_dim=embedding_dim,  # Embedding dimension
+        padding_idx=vocab['<pad>']  # Padding token index
+    )
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the language modeling script.")
