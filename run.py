@@ -1,6 +1,6 @@
 import argparse
 from datasets import load_dataset
-from train import train_model
+from train import train_model, evaluate_test_set
 
 def main(output_file):
     # Load the Penn Treebank dataset
@@ -25,8 +25,10 @@ def main(output_file):
     }
 
     # Train the model
-    train_model(config, train_sentences, val_sentences)
+    model, vocab = train_model(config, train_sentences, val_sentences)
 
+    # Evaluate the model on the test set
+    evaluate_test_set(config, model, vocab, test_sentences, output_file)
 
 
 if __name__ == "__main__":

@@ -1,12 +1,21 @@
 import math
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split, Dataset
+from torch.utils.data import DataLoader, Dataset
 from collections import Counter
 from tqdm import tqdm
 import csv
 from model import build_transformer
 
+# Function to create causal masks
+def causal_mask(size):
+    """
+    Create a causal mask to prevent attending to future tokens.
+    """
+    mask = torch.tril(torch.ones(size, size)).unsqueeze(0).unsqueeze(0)
+    return mask  # Shape: (1, 1, seq_len, seq_len)
+
+# Function to build vocabulary
 def build_vocab(sentences, min_freq=0):
     """
     Build a vocabulary from training sentences.
@@ -30,6 +39,7 @@ def build_vocab(sentences, min_freq=0):
 
     return vocab
 
+# Function to tokenize and encode sentences
 def tokenize_and_encode(sentences, vocab):
     """
     Tokenize and encode sentences based on the vocabulary.
@@ -41,6 +51,7 @@ def tokenize_and_encode(sentences, vocab):
         encoded_sentences.append(encoded)
     return encoded_sentences
 
+# Dataset class for language modeling
 class LanguageModelDataset(Dataset):
     def __init__(self, encoded_sentences):
         self.data = encoded_sentences
@@ -51,27 +62,27 @@ class LanguageModelDataset(Dataset):
     def __getitem__(self, idx):
         return torch.tensor(self.data[idx], dtype=torch.long)
 
+# Function to prepare datasets
 def prepare_dataset(config, train_sentences, val_sentences):
-    # Build vocabulary from training sentences
+    """
+    Prepare train and validation datasets.
+    """
     vocab = build_vocab(train_sentences, min_freq=config['min_freq'])
-    
-    # Tokenize and encode training and validation sentences
     encoded_train = tokenize_and_encode(train_sentences, vocab)
     encoded_val = tokenize_and_encode(val_sentences, vocab)
 
-    # Create PyTorch datasets
     train_dataset = LanguageModelDataset(encoded_train)
     val_dataset = LanguageModelDataset(encoded_val)
 
-    # Create data loaders
     train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False)
     return train_loader, val_loader, vocab
 
-
+# Function to compute perplexity
 def compute_perplexity(loss):
     return math.exp(loss)
 
+# Validation function with causal masking
 def run_validation(model, validation_loader, criterion, device):
     model.eval()
     total_loss = 0
@@ -81,20 +92,31 @@ def run_validation(model, validation_loader, criterion, device):
             inputs = batch[:, :-1].to(device)
             targets = batch[:, 1:].to(device)
 
-            output = model(inputs, None)  # Adjust for your model's input
-            loss = criterion(output.view(-1, output.size(-1)), targets.view(-1))
+            seq_len = inputs.size(1)
+            tgt_mask = causal_mask(seq_len).to(device)
+
+            output = model.encode(inputs, tgt_mask)
+            logits = model.project(output)
+            loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
             total_loss += loss.item()
 
     avg_loss = total_loss / len(validation_loader)
     return compute_perplexity(avg_loss)
-    
+
+# Training loop
 def train_model(config, train_sentences, val_sentences):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # Prepare data loaders
+    """
+    Train the transformer model for language modeling.
+    """
+    if torch.cuda.is_available():
+        device = torch.device("cuda")  # Use CUDA if available
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")  # Use MPS if available (macOS with Apple Silicon)
+    else:
+        device = torch.device("cpu")  # Fallback to CPU
+    print(f"Using device: {device} for training.")
     train_loader, val_loader, vocab = prepare_dataset(config, train_sentences, val_sentences)
 
-    # Initialize the model
     model = build_transformer(
         len(vocab), len(vocab), config['seq_len'], config['seq_len'], d_model=config['d_model']
     ).to(device)
@@ -102,18 +124,22 @@ def train_model(config, train_sentences, val_sentences):
     optimizer = torch.optim.Adam(model.parameters(), lr=config['lr'])
     criterion = nn.CrossEntropyLoss(ignore_index=vocab['<pad>']).to(device)
 
-    # Training loop
     for epoch in range(config['num_epochs']):
         model.train()
         total_loss = 0
+        batch_iterator = tqdm(train_loader, desc=f"Epoch {epoch + 1}")
 
-        for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1}"):
+        for batch in batch_iterator:
             inputs = batch[:, :-1].to(device)
             targets = batch[:, 1:].to(device)
 
+            seq_len = inputs.size(1)
+            tgt_mask = causal_mask(seq_len).to(device)
+
             # Forward pass
-            output = model(inputs, None)  # Adjust if model requires specific input format
-            loss = criterion(output.view(-1, output.size(-1)), targets.view(-1))
+            encoder_output = model.encode(inputs, tgt_mask)
+            logits = model.project(encoder_output)
+            loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
 
             # Backward pass
             optimizer.zero_grad()
@@ -122,18 +148,30 @@ def train_model(config, train_sentences, val_sentences):
 
             total_loss += loss.item()
 
-        avg_loss = total_loss / len(train_loader)
-        val_perplexity = run_validation(model, val_loader, criterion, device)
-        print(f"Epoch {epoch + 1}, Train Loss: {avg_loss:.4f}, Validation Perplexity: {val_perplexity:.4f}")
+            # Update progress bar
+            batch_iterator.set_postfix({"loss": f"{loss.item():.4f}"})
 
-    # Return the trained model and vocabulary
+        avg_loss = total_loss / len(train_loader)
+        val_ppl = run_validation(model, val_loader, criterion, device)
+        print(f"Epoch {epoch + 1}, Train Loss: {avg_loss:.4f}, Validation Perplexity: {val_ppl:.4f}")
+
     return model, vocab
 
+# Test set evaluation
 def evaluate_test_set(config, model, vocab, test_sentences, output_file):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    """
+    Evaluate the model on the test set and write perplexities to a CSV file.
+    """
+    # Device selection: prioritize CUDA, then MPS, then CPU
+    if torch.cuda.is_available():
+        device = torch.device("cuda")  # Use CUDA if available
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")  # Use MPS if available (macOS with Apple Silicon)
+    else:
+        device = torch.device("cpu")  # Fallback to CPU
+    print(f"Using device: {device} to evaluate test set.")
     model.eval()
 
-    # Tokenize and encode test sentences
     encoded_test = tokenize_and_encode(test_sentences, vocab)
     test_dataset = LanguageModelDataset(encoded_test)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
@@ -141,18 +179,20 @@ def evaluate_test_set(config, model, vocab, test_sentences, output_file):
     criterion = nn.CrossEntropyLoss(ignore_index=vocab['<pad>']).to(device)
     sequence_perplexities = []
 
-    # Compute perplexity for each sequence
     with torch.no_grad():
         for i, batch in enumerate(test_loader):
             batch = batch.to(device)
             inputs = batch[:, :-1]
             targets = batch[:, 1:]
 
-            # Forward pass
-            output = model(inputs, None)  # Adjust if model requires specific input format
-            loss = criterion(output.view(-1, output.size(-1)), targets.view(-1))
+            seq_len = inputs.size(1)
+            tgt_mask = causal_mask(seq_len).to(device)
 
-            # Compute perplexity
+            # Forward pass
+            encoder_output = model.encode(inputs, tgt_mask)
+            logits = model.project(encoder_output)
+            loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
+
             ppl = compute_perplexity(loss.item())
             sequence_perplexities.append((i, ppl))
 
@@ -163,7 +203,5 @@ def evaluate_test_set(config, model, vocab, test_sentences, output_file):
         for seq_id, ppl in sequence_perplexities:
             writer.writerow([seq_id, f"{ppl:.2f}"])
 
-    # Compute and print average perplexity
     avg_ppl = sum(ppl for _, ppl in sequence_perplexities) / len(sequence_perplexities)
     print(f"Average Test Perplexity: {avg_ppl:.4f}")
-
