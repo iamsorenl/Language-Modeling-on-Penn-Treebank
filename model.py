@@ -41,7 +41,7 @@ class PositionalEncoding(nn.Module):
 
         pe = pe.unsqueeze(0) # (1, seq_len, d_model) - Add a batch dimension
 
-        self.regiser_buffer('pe', pe)
+        self.register_buffer('pe', pe)
 
     def forward(self, x):
         x = x + (self.pe[:, :x.shape[1], :]).requires_grad_(False)
@@ -93,7 +93,7 @@ class MultiHeadAttentionBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     @staticmethod
-    def attention(query, key, value, mask, dropout: nn.Droput):
+    def attention(query, key, value, mask, dropout: nn.Dropout):
         d_k = query.shape[-1]
 
         # (Batch, h, seq_len, d_k) x (Batch, h, d_k, seq_len) --> (Batch, h, seq_len, seq_len)
@@ -140,7 +140,7 @@ class EncoderBlock(nn.Module):
     '''
     This module defines the EncoderBlock class, which is responsible for applying self-attention and feedforward neural network to the input tensor.
     '''
-    def __init__(self, self_attention_block: MultiHeadAttention, feed_forward_block: FeedForwardBlock, dropout: float) -> None:
+    def __init__(self, self_attention_block: MultiHeadAttentionBlock, feed_forward_block: FeedForwardBlock, dropout: float) -> None:
         super().__init__()
         self.self_attention_block = self_attention_block
         self.feed_forward_block = feed_forward_block

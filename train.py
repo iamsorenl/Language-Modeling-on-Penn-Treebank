@@ -6,6 +6,15 @@ from collections import Counter
 from tqdm import tqdm
 import csv
 from model import build_transformer
+from torch.nn.utils.rnn import pad_sequence
+
+# Function to collate sequences
+def collate_fn(batch):
+    """
+    Pads a batch of sequences to the length of the longest sequence in the batch.
+    Assumes that 0 is the padding value for <pad>.
+    """
+    return pad_sequence(batch, batch_first=True, padding_value=0)
 
 # Function to create causal masks
 def causal_mask(size):
@@ -74,8 +83,8 @@ def prepare_dataset(config, train_sentences, val_sentences):
     train_dataset = LanguageModelDataset(encoded_train)
     val_dataset = LanguageModelDataset(encoded_val)
 
-    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, collate_fn=collate_fn)
+    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate_fn)
     return train_loader, val_loader, vocab
 
 # Function to compute perplexity
@@ -174,7 +183,7 @@ def evaluate_test_set(config, model, vocab, test_sentences, output_file):
 
     encoded_test = tokenize_and_encode(test_sentences, vocab)
     test_dataset = LanguageModelDataset(encoded_test)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, collate_fn=collate_fn)
 
     criterion = nn.CrossEntropyLoss(ignore_index=vocab['<pad>']).to(device)
     sequence_perplexities = []
