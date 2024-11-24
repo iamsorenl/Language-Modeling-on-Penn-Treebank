@@ -51,7 +51,7 @@ class LayerNormalization(nn.Module):
     '''
     This module defines the LayerNormalization class, which is responsible for normalizing the input tensor across the last dimension.
     '''
-    def __inite__(self, eps: float = 10**-6) -> None:
+    def __init__(self, eps: float = 10**-6) -> None:
         super().__init__()
         self.eps = eps
         self.alpha = nn.Parameter(torch.ones(1)) # Multiplied
