@@ -1,40 +1,6 @@
 import argparse
 from datasets import load_dataset
-from collections import Counter
-
-def tokenize_and_encode(sentences, vocab):
-    """
-    Tokenize and encode sentences based on the vocabulary.
-    """
-    encoded_sentences = []
-    for sentence in sentences:
-        tokens = ['<s>'] + sentence.split() + ['</s>']
-        encoded = [vocab.get(token, vocab['<unk>']) for token in tokens]
-        encoded_sentences.append(encoded)
-    return encoded_sentences
-
-def build_vocab(sentences, min_freq=0):
-    """
-    Build a vocabulary from training sentences.
-    """
-    counter = Counter()
-    for sentence in sentences:
-        tokens = sentence.split()
-        counter.update(tokens)
-
-    # Initialize vocabulary with special tokens
-    vocab = {'<pad>': 0, '<unk>': 1, '<s>': 2, '</s>': 3}
-    idx = len(vocab)
-
-    # Add words meeting the frequency threshold to the vocabulary
-    for word, freq in counter.items():
-        if word in vocab:  # Skip tokens that are already in the vocabulary
-            continue
-        if freq >= min_freq:
-            vocab[word] = idx
-            idx += 1
-
-    return vocab
+from train import train_model
 
 def main(output_file):
     # Load the Penn Treebank dataset
@@ -48,15 +14,20 @@ def main(output_file):
     val_sentences = [example['sentence'] for example in val_data]
     test_sentences = [example['sentence'] for example in test_data]
 
-    # Build vocabulary from training data
-    min_freq = 0 # Define minimum frequency threshold
-    vocab = build_vocab(train_sentences, min_freq=min_freq)
-    print(f"Vocabulary size: {len(vocab)}")
+    # Define training configuration
+    config = {
+        'seq_len': 50,  # Maximum sequence length for padding/truncation
+        'd_model': 512,  # Transformer model dimension
+        'num_epochs': 10,  # Number of training epochs
+        'lr': 1e-4,  # Learning rate
+        'batch_size': 32,  # Batch size for training
+        'min_freq': 3,  # Minimum frequency for including a word in the vocabulary
+    }
 
-    # Tokenize and encode the datasets
-    encoded_train = tokenize_and_encode(train_sentences, vocab)
-    encoded_val = tokenize_and_encode(val_sentences, vocab)
-    encoded_test = tokenize_and_encode(test_sentences, vocab)
+    # Train the model
+    train_model(config, train_sentences, val_sentences)
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the language modeling script.")
