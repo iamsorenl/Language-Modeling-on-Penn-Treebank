@@ -18,6 +18,61 @@ def format_time(seconds):
     mins, secs = divmod(seconds, 60)
     return f"{int(mins)}m {secs:.2f}s"
 
+def evaluate_and_save(model, data_loader, criterion, device, output_file):
+    """
+    Evaluate the model on the test dataset and save per-example perplexities.
+    """
+    model.eval()
+    start_time = time.time()  # Start timing evaluation
+    all_perplexities = []  # To store perplexities for each example
+    total_loss = 0
+    total_count = 0  # Count of valid tokens to compute average loss
+
+    with torch.no_grad():
+        for batch_idx, (input_seqs, target_seqs, pad_masks) in enumerate(data_loader):
+            # Move data to the selected device
+            input_seqs, target_seqs, pad_masks = input_seqs.to(device), target_seqs.to(device), pad_masks.to(device)
+
+            # Forward pass
+            logits = model(input_seqs, pad_masks)
+            batch_size, seq_len, vocab_size = logits.shape
+
+            for i in range(batch_size):
+                # Extract logits and targets for each sequence
+                seq_logits = logits[i, :-1, :]  # Exclude last token for logits
+                seq_targets = target_seqs[i, 1:]  # Exclude first token for targets
+
+                # Mask out padded tokens
+                valid_indices = seq_targets != criterion.ignore_index
+                seq_logits = seq_logits[valid_indices]
+                seq_targets = seq_targets[valid_indices]
+
+                # Skip entirely padded sequences
+                if seq_targets.numel() == 0:
+                    all_perplexities.append(float('nan'))  # Assign NaN if sequence is entirely padded
+                    continue
+
+                # Compute sequence loss
+                seq_loss = criterion(seq_logits, seq_targets).item()
+                seq_perplexity = torch.exp(torch.tensor(seq_loss)).item()
+
+                all_perplexities.append(seq_perplexity)
+                total_loss += seq_loss
+                total_count += 1
+
+    # Write results to the output file
+    with open(output_file, "w") as f:
+        f.write("ID,ppl\n")
+        for idx, ppl in enumerate(all_perplexities):
+            f.write(f"{idx},{ppl:.2f}\n")
+
+    avg_loss = total_loss / total_count if total_count > 0 else float('nan')
+    avg_perplexity = torch.exp(torch.tensor(avg_loss)) if total_count > 0 else float('nan')
+    eval_time = time.time() - start_time  # End timing
+    print(f"Evaluation completed in {format_time(eval_time)}")
+    print(f"Saved results to {output_file}")
+    return avg_loss, avg_perplexity
+
 def evaluate(model, data_loader, criterion, device):
     """
     Evaluate the model on the validation/test dataset.
@@ -130,7 +185,7 @@ def main(output_file):
     print(f"Vocabulary size: {len(vocab)}")
 
     # Wrap datasets in DataLoader for batching
-    batch_size = 32  # Define batch size
+    batch_size = 16  # Define batch size
     train_loader = DataLoader(
         TokenizedDataset(train_sentences), 
         batch_size=batch_size, 
@@ -195,12 +250,9 @@ def main(output_file):
     total_train_time = time.time() - train_start_time
     print(f"Training completed in {format_time(total_train_time)}")
 
-    # Evaluate on the test set
-    test_loss, test_perplexity = evaluate(model, test_loader, criterion, device)
+    # Evaluate on the test set and save per-example perplexities
+    test_loss, test_perplexity = evaluate_and_save(model, test_loader, criterion, device, output_file)
     print(f"Test Loss: {test_loss}, Test Perplexity: {test_perplexity}")
-
-    # Not Implemented: use output file
-    print(f"(not implemented) Saving model to {output_file}...")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the language modeling script.")
