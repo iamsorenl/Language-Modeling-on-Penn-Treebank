@@ -129,7 +129,7 @@ def run_validation(model, validation_loader, criterion, device):
             input_mask = combined_mask(inputs, pad_idx=0).to(device)
 
             # Forward pass
-            output = model.encode(inputs, input_mask)
+            output = model(inputs, input_mask)
             logits = model.project(output)
             loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
             total_loss += loss.item()
@@ -168,7 +168,7 @@ def train_model(config, train_sentences, val_sentences):
             input_mask = combined_mask(inputs, pad_idx=0).to(device)
 
             # Forward pass
-            encoder_output = model.encode(inputs, input_mask)
+            encoder_output = model(inputs, input_mask)
             logits = model.project(encoder_output)
             loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
 
@@ -220,7 +220,7 @@ def evaluate_test_set(config, model, vocab, test_sentences, output_file):
             input_mask = combined_mask(inputs, pad_idx=0).to(device)
 
             # Forward pass
-            encoder_output = model.encode(inputs, input_mask)
+            encoder_output = model(inputs, input_mask)
             logits = model.project(encoder_output)
             loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
 
