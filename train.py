@@ -184,6 +184,13 @@ def train_model(config, train_sentences, val_sentences):
 
 # Test set evaluation
 def evaluate_test_set(config, model, vocab, test_sentences, output_file):
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+    print(f"Using device: {device} for evaluating the test set.")
     model.eval()
     encoded_test = tokenize_and_encode(test_sentences, vocab)
     test_dataset = LanguageModelDataset(encoded_test)
