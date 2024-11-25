@@ -36,8 +36,6 @@ def combined_mask(inputs, pad_idx=0):
     combined = pad_mask & causal_mask
     return combined
 
-
-
 # Function to build vocabulary
 def build_vocab(sentences, min_freq=0):
     """
