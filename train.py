@@ -20,13 +20,15 @@ def collate_fn(batch, seq_len):
     ]
     return torch.stack(batch)
 
-# Function to create causal masks
-def causal_mask(size):
+# Function to create a padding mask
+def padding_mask(inputs, pad_idx=0):
     """
-    Create a causal mask to prevent attending to future tokens.
+    Create a padding mask to ignore <pad> tokens.
+    Assumes <pad> is indexed at `pad_idx`.
     """
-    mask = torch.tril(torch.ones(size, size)).unsqueeze(0).unsqueeze(0)
-    return mask  # Shape: (1, 1, seq_len, seq_len)
+    # Create a mask where 1 means <unk> and 0 means <pad>
+    return (inputs != pad_idx).unsqueeze(1).unsqueeze(2)  # Shape: (batch_size, 1, 1, seq_len)
+
 
 # Function to build vocabulary
 def build_vocab(sentences, min_freq=0):
@@ -107,7 +109,7 @@ def prepare_dataset(config, train_sentences, val_sentences):
 def compute_perplexity(loss):
     return math.exp(loss)
 
-# Validation function with causal masking
+# Validation function with padded masking
 def run_validation(model, validation_loader, criterion, device):
     model.eval()
     total_loss = 0
@@ -118,7 +120,7 @@ def run_validation(model, validation_loader, criterion, device):
             targets = batch[:, 1:].to(device)
 
             seq_len = inputs.size(1)
-            tgt_mask = causal_mask(seq_len).to(device)
+            tgt_mask = padding_mask(seq_len).to(device)
 
             output = model.encode(inputs, tgt_mask)
             logits = model.project(output)
@@ -159,7 +161,7 @@ def train_model(config, train_sentences, val_sentences):
             targets = batch[:, 1:].to(device)
 
             seq_len = inputs.size(1)
-            tgt_mask = causal_mask(seq_len).to(device)
+            tgt_mask = padding_mask(seq_len).to(device)
 
             # Forward pass
             encoder_output = model.encode(inputs, tgt_mask)
@@ -216,7 +218,7 @@ def evaluate_test_set(config, model, vocab, test_sentences, output_file):
             targets = batch[:, 1:]
 
             seq_len = inputs.size(1)
-            tgt_mask = causal_mask(seq_len).to(device)
+            tgt_mask = padding_mask(seq_len).to(device)
 
             # Forward pass
             encoder_output = model.encode(inputs, tgt_mask)
