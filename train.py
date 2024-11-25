@@ -119,6 +119,7 @@ def compute_perplexity(loss):
 def run_validation(model, validation_loader, criterion, device):
     model.eval()
     total_loss = 0
+    total_sequences = 0  # To normalize the total loss
 
     with torch.no_grad():
         for batch in validation_loader:
@@ -130,10 +131,18 @@ def run_validation(model, validation_loader, criterion, device):
 
             # Forward pass
             logits = model(inputs, input_mask)
-            loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
-            total_loss += loss.item()
 
-    avg_loss = total_loss / len(validation_loader)
+            # Compute token-level losses
+            token_losses = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
+            token_losses = token_losses.view(targets.size())  # Reshape to (batch_size, seq_len)
+
+            # Aggregate to sequence-level loss
+            sequence_losses = token_losses.sum(dim=1) / (targets != 0).sum(dim=1)  # Ignore padding tokens
+            total_loss += sequence_losses.sum().item()  # Sum up all sequence-level losses
+            total_sequences += sequence_losses.size(0)  # Count the number of sequences
+
+    # Compute the average loss per sequence
+    avg_loss = total_loss / total_sequences
     return compute_perplexity(avg_loss)
 
 def train_model(config, train_sentences, val_sentences):
