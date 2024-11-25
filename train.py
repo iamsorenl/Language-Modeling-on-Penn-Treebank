@@ -20,14 +20,22 @@ def collate_fn(batch, seq_len):
     ]
     return torch.stack(batch)
 
-# Function to create a padding mask
-def padding_mask(inputs, pad_idx=0):
+# Function to create padding and causal mask
+def combined_mask(inputs, pad_idx=0):
     """
-    Create a padding mask to ignore <pad> tokens.
-    Assumes <pad> is indexed at `pad_idx`.
+    Combine causal and padding masks for auto-regressive modeling with variable-length sequences.
     """
-    # Create a mask where 1 means <unk> and 0 means <pad>
-    return (inputs != pad_idx).unsqueeze(1).unsqueeze(2)  # Shape: (batch_size, 1, 1, seq_len)
+    # Create padding mask: 1 for non-padding tokens, 0 for padding tokens
+    pad_mask = (inputs != pad_idx).unsqueeze(1).unsqueeze(2)  # (batch_size, 1, 1, seq_len)
+
+    # Create causal mask: 1 for allowed positions, 0 for disallowed future positions
+    seq_len = inputs.size(1)
+    causal_mask = torch.tril(torch.ones(seq_len, seq_len, device=inputs.device)).bool()  # (seq_len, seq_len)
+
+    # Combine the masks: allow positions where both masks are 1
+    combined = pad_mask & causal_mask
+    return combined
+
 
 
 # Function to build vocabulary
@@ -120,7 +128,7 @@ def run_validation(model, validation_loader, criterion, device):
             targets = batch[:, 1:].to(device)
 
             # Create padding mask for inputs
-            input_mask = padding_mask(inputs, pad_idx=0).to(device)
+            input_mask = combined_mask(inputs, pad_idx=0).to(device)
 
             # Forward pass
             output = model.encode(inputs, input_mask)
@@ -159,7 +167,7 @@ def train_model(config, train_sentences, val_sentences):
             targets = batch[:, 1:].to(device)
 
             # Create padding mask for inputs
-            input_mask = padding_mask(inputs, pad_idx=0).to(device)
+            input_mask = combined_mask(inputs, pad_idx=0).to(device)
 
             # Forward pass
             encoder_output = model.encode(inputs, input_mask)
@@ -211,7 +219,7 @@ def evaluate_test_set(config, model, vocab, test_sentences, output_file):
             targets = batch[:, 1:]
 
             # Create padding mask for inputs
-            input_mask = padding_mask(inputs, pad_idx=0).to(device)
+            input_mask = combined_mask(inputs, pad_idx=0).to(device)
 
             # Forward pass
             encoder_output = model.encode(inputs, input_mask)
