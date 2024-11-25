@@ -119,10 +119,11 @@ def run_validation(model, validation_loader, criterion, device):
             inputs = batch[:, :-1].to(device)
             targets = batch[:, 1:].to(device)
 
-            seq_len = inputs.size(1)
-            tgt_mask = padding_mask(seq_len).to(device)
+            # Create padding mask for inputs
+            input_mask = padding_mask(inputs, pad_idx=0).to(device)
 
-            output = model.encode(inputs, tgt_mask)
+            # Forward pass
+            output = model.encode(inputs, input_mask)
             logits = model.project(output)
             loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
             total_loss += loss.item()
@@ -130,18 +131,15 @@ def run_validation(model, validation_loader, criterion, device):
     avg_loss = total_loss / len(validation_loader)
     return compute_perplexity(avg_loss)
 
-# Training loop
 def train_model(config, train_sentences, val_sentences):
-    """
-    Train the transformer model for language modeling.
-    """
     if torch.cuda.is_available():
-        device = torch.device("cuda")  # Use CUDA if available
+        device = torch.device("cuda")
     elif torch.backends.mps.is_available():
-        device = torch.device("mps")  # Use MPS if available (macOS with Apple Silicon)
+        device = torch.device("mps")
     else:
-        device = torch.device("cpu")  # Fallback to CPU
+        device = torch.device("cpu")
     print(f"Using device: {device} for training.")
+    
     train_loader, val_loader, vocab = prepare_dataset(config, train_sentences, val_sentences)
 
     model = build_transformer(
@@ -160,11 +158,11 @@ def train_model(config, train_sentences, val_sentences):
             inputs = batch[:, :-1].to(device)
             targets = batch[:, 1:].to(device)
 
-            seq_len = inputs.size(1)
-            tgt_mask = padding_mask(seq_len).to(device)
+            # Create padding mask for inputs
+            input_mask = padding_mask(inputs, pad_idx=0).to(device)
 
             # Forward pass
-            encoder_output = model.encode(inputs, tgt_mask)
+            encoder_output = model.encode(inputs, input_mask)
             logits = model.project(encoder_output)
             loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
 
@@ -186,26 +184,14 @@ def train_model(config, train_sentences, val_sentences):
 
 # Test set evaluation
 def evaluate_test_set(config, model, vocab, test_sentences, output_file):
-    """
-    Evaluate the model on the test set and write perplexities to a CSV file.
-    """
-    # Device selection: prioritize CUDA, then MPS, then CPU
-    if torch.cuda.is_available():
-        device = torch.device("cuda")  # Use CUDA if available
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")  # Use MPS if available (macOS with Apple Silicon)
-    else:
-        device = torch.device("cpu")  # Fallback to CPU
-    print(f"Using device: {device} to evaluate test set.")
     model.eval()
-
     encoded_test = tokenize_and_encode(test_sentences, vocab)
     test_dataset = LanguageModelDataset(encoded_test)
     test_loader = DataLoader(
-    test_dataset, 
-    batch_size=1, 
-    shuffle=False, 
-    collate_fn=lambda batch: collate_fn(batch, config['seq_len'])
+        test_dataset, 
+        batch_size=1, 
+        shuffle=False, 
+        collate_fn=lambda batch: collate_fn(batch, config['seq_len'])
     )
 
     criterion = nn.CrossEntropyLoss(ignore_index=vocab['<pad>']).to(device)
@@ -217,11 +203,11 @@ def evaluate_test_set(config, model, vocab, test_sentences, output_file):
             inputs = batch[:, :-1]
             targets = batch[:, 1:]
 
-            seq_len = inputs.size(1)
-            tgt_mask = padding_mask(seq_len).to(device)
+            # Create padding mask for inputs
+            input_mask = padding_mask(inputs, pad_idx=0).to(device)
 
             # Forward pass
-            encoder_output = model.encode(inputs, tgt_mask)
+            encoder_output = model.encode(inputs, input_mask)
             logits = model.project(encoder_output)
             loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
 
