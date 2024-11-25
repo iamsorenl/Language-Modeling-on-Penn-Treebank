@@ -6,7 +6,6 @@ from collections import Counter
 from tqdm import tqdm
 import csv
 from model import build_transformer
-# from torch.nn.utils.rnn import pad_sequence
 
 # Function to collate sequences
 def collate_fn(batch, seq_len):
