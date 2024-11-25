@@ -21,7 +21,7 @@ def main(output_file):
         'num_epochs': 10,  # Number of training epochs
         'lr': 1e-4,  # Learning rate
         'batch_size': 32,  # Batch size for training
-        'min_freq': 3,  # Minimum frequency for including a word in the vocabulary
+        'min_freq': 0,  # Minimum frequency for including a word in the vocabulary
     }
 
     # Train the model
