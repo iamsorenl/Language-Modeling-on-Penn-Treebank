@@ -1,6 +1,19 @@
 import argparse
 from datasets import load_dataset
 from train import train_model, evaluate_test_set
+import torch
+import numpy as np
+import random
+
+# Set seeds for reproducibility
+seed = 24
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
+torch.cuda.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 def main(output_file):
     # Load the Penn Treebank dataset

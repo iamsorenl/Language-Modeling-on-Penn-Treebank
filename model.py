@@ -285,6 +285,9 @@ def build_transformer_encoder_only(vocab_size: int, seq_len: int, d_model: int =
     '''
     Build an encoder-only transformer for sequence modeling.
     '''
+    # Set the random seed for reproducibility
+    torch.manual_seed(24)
+
     # Create the embedding layer
     embed = InputEmbeddings(d_model, vocab_size)
 

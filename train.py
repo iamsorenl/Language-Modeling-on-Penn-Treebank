@@ -95,6 +95,9 @@ def prepare_dataset(config, train_sentences, val_sentences):
     train_dataset = LanguageModelDataset(encoded_train)
     val_dataset = LanguageModelDataset(encoded_val)
 
+    # Add this line before DataLoader creation
+    torch.manual_seed(24)
+
     train_loader = DataLoader(
         train_dataset, 
         batch_size=config['batch_size'], 
@@ -155,6 +158,8 @@ def train_model(config, train_sentences, val_sentences):
     print(f"Using device: {device} for training.")
     
     train_loader, val_loader, vocab = prepare_dataset(config, train_sentences, val_sentences)
+
+    torch.manual_seed(24)
 
     model = build_transformer_encoder_only(
         len(vocab), config['seq_len'], d_model=config['d_model']
