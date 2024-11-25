@@ -152,7 +152,7 @@ def train_model(config, train_sentences, val_sentences):
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config['lr'])
-    criterion = nn.CrossEntropyLoss(ignore_index=vocab['<pad>']).to(device)
+    criterion = nn.CrossEntropyLoss(ignore_index=vocab['<pad>'], reduction='none').to(device)  # Use reduction='none'
 
     for epoch in range(config['num_epochs']):
         model.train()
@@ -160,25 +160,32 @@ def train_model(config, train_sentences, val_sentences):
         batch_iterator = tqdm(train_loader, desc=f"Epoch {epoch + 1}")
 
         for batch in batch_iterator:
-            inputs = batch[:, :-1].to(device)
-            targets = batch[:, 1:].to(device)
+            inputs = batch[:, :-1].to(device)  # Input tokens
+            targets = batch[:, 1:].to(device)  # Target tokens
 
-            # Create padding mask for inputs
+            # Create padding and causal mask
             input_mask = combined_mask(inputs, pad_idx=0).to(device)
 
             # Forward pass
             logits = model(inputs, input_mask)
-            loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
+
+            # Compute token-level losses
+            token_losses = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))  # Token-level loss
+            token_losses = token_losses.view(targets.size())  # Reshape to (batch_size, seq_len)
+
+            # Aggregate token-level losses into sequence-level loss
+            sequence_losses = token_losses.sum(dim=1) / (targets != 0).sum(dim=1)  # Sum over tokens, normalize by sequence length (ignoring padding)
+            batch_loss = sequence_losses.mean()  # Mean over batch
 
             # Backward pass
             optimizer.zero_grad()
-            loss.backward()
+            batch_loss.backward()
             optimizer.step()
 
-            total_loss += loss.item()
+            total_loss += batch_loss.item()
 
             # Update progress bar
-            batch_iterator.set_postfix({"loss": f"{loss.item():.4f}"})
+            batch_iterator.set_postfix({"loss": f"{batch_loss.item():.4f}"})
 
         avg_loss = total_loss / len(train_loader)
         val_ppl = run_validation(model, val_loader, criterion, device)
