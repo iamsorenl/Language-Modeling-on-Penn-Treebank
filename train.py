@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, Dataset
 from collections import Counter
 from tqdm import tqdm
 import csv
-from model import build_transformer
+from model import build_transformer_encoder_only
 
 # Function to collate sequences
 def collate_fn(batch, seq_len):
@@ -148,8 +148,8 @@ def train_model(config, train_sentences, val_sentences):
     
     train_loader, val_loader, vocab = prepare_dataset(config, train_sentences, val_sentences)
 
-    model = build_transformer(
-        len(vocab), len(vocab), config['seq_len'], config['seq_len'], d_model=config['d_model']
+    model = build_transformer_encoder_only(
+        len(vocab), config['seq_len'], d_model=config['d_model']
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config['lr'])

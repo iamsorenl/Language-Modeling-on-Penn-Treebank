@@ -280,4 +280,52 @@ def build_transformer(src_vocab_size: int, tgt_vocab_size: int, src_seq_len: int
             nn.init.xavier_uniform_(p)
     
     return transformer
+
+def build_transformer_encoder_only(vocab_size: int, seq_len: int, d_model: int = 512, N: int = 6, h: int = 8, dropout: float = 0.1, d_ff: int = 2048) -> nn.Module:
+    '''
+    Build an encoder-only transformer for sequence modeling.
+    '''
+    # Create the embedding layer
+    embed = InputEmbeddings(d_model, vocab_size)
+
+    # Create the positional encoding layer
+    pos_encoding = PositionalEncoding(d_model, seq_len, dropout)
+
+    # Create the encoder blocks
+    encoder_blocks = []
+    for _ in range(N):
+        self_attention_block = MultiHeadAttentionBlock(d_model, h, dropout)
+        feed_forward_block = FeedForwardBlock(d_model, d_ff, dropout)
+        encoder_block = EncoderBlock(self_attention_block, feed_forward_block, dropout)
+        encoder_blocks.append(encoder_block)
+
+    # Create the encoder
+    encoder = Encoder(nn.ModuleList(encoder_blocks))
+
+    # Create the projection layer
+    projection_layer = ProjectionLayer(d_model, vocab_size)
+
+    # Combine all components into a simple model
+    class TransformerEncoderOnly(nn.Module):
+        def __init__(self, embed, pos_encoding, encoder, projection_layer):
+            super().__init__()
+            self.embed = embed
+            self.pos_encoding = pos_encoding
+            self.encoder = encoder
+            self.projection_layer = projection_layer
+
+        def forward(self, inputs, mask):
+            # Embed inputs and add positional encodings
+            x = self.embed(inputs)
+            x = self.pos_encoding(x)
+
+            # Pass through the encoder
+            x = self.encoder(x, mask)
+
+            # Project to vocabulary size
+            logits = self.projection_layer(x)
+            return logits
+
+    # Return the transformer encoder-only model
+    return TransformerEncoderOnly(embed, pos_encoding, encoder, projection_layer)
     
