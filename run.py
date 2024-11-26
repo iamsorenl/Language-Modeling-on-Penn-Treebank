@@ -43,7 +43,6 @@ def main(output_file):
     # Evaluate the model on the test set
     evaluate_test_set(config, model, vocab, test_sentences, output_file)
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the language modeling script.")
     parser.add_argument('output_file', type=str, nargs='?', default='submission.csv', help='The output file to save the model.')
