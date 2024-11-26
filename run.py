@@ -29,12 +29,12 @@ def main(output_file):
 
     # Define training configuration
     config = {
-        'seq_len': 60,  # Maximum sequence length for padding/truncation
-        'd_model': 768,  # Transformer model dimension
+        'seq_len': 40,  # Maximum sequence length for padding/truncation
+        'd_model': 256,  # Transformer model dimension
         'num_epochs': 10,  # Number of training epochs
-        'lr': 5 * 1e-5,  # Learning rate
-        'batch_size': 64,  # Batch size for training
-        'min_freq': 2,  # Minimum frequency for including a word in the vocabulary
+        'lr': 1e-3,  # Learning rate
+        'batch_size': 16,  # Batch size for training
+        'min_freq': 5,  # Minimum frequency for including a word in the vocabulary
     }
 
     # Train the model
